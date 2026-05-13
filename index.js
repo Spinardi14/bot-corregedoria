@@ -137,8 +137,11 @@ Todas as delegações deste fica por sua responsabilidade.`
     if (interaction.commandName === "intimar") {
       const userId = interaction.options.getString("id");
 
+      let usuario = null;
+      let entregue = false;
+
       try {
-        const usuario = await client.users.fetch(userId);
+        usuario = await client.users.fetch(userId);
 
         await usuario.send(
 `⚖️ INTIMAÇÃO — CORREGEDORIA GERAL DO SAMU
@@ -152,19 +155,29 @@ Falar com:
 ${interaction.user}`
         );
 
-        return interaction.reply({
-          content: `✅ Intimação enviada com sucesso para ${usuario.tag}.`,
-          ephemeral: true
-        });
+        entregue = true;
 
       } catch (err) {
         console.error("Erro ao enviar intimação:", err);
-
-        return interaction.reply({
-          content: "❌ Não foi possível enviar a intimação. Verifique se o ID está correto ou se o usuário permite receber DM.",
-          ephemeral: true
-        });
+        entregue = false;
       }
+
+      await channel.send(
+`━━━━━━━━━━━━━━━━◇◆◇━━━━━━━━━━━━━━━━
+REGISTRO DE INTIMAÇÃO
+━━━━━━━━━━━━━━━━◇◆◇━━━━━━━━━━━━━━━━
+
+O corregedor: ${interaction.user}
+Intimou: ${usuario ? `${usuario}` : `ID ${userId}`}
+Intimação entregue: ${entregue ? "sim" : "não"}`
+      );
+
+      return interaction.reply({
+        content: entregue
+          ? `✅ Intimação enviada com sucesso para ${usuario.tag}.`
+          : "❌ Não foi possível entregar a intimação. O registro foi lançado no canal.",
+        ephemeral: true
+      });
     }
 
   } catch (error) {
