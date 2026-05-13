@@ -4,7 +4,8 @@ const {
   Client,
   GatewayIntentBits,
   PermissionsBitField,
-  ChannelType
+  ChannelType,
+  SlashCommandBuilder
 } = require("discord.js");
 
 const client = new Client({
@@ -19,6 +20,13 @@ const client = new Client({
 const CATEGORIA_PROCESSOS = process.env.CATEGORIA_PROCESSOS;
 const CANAL_LOGS = process.env.CANAL_LOGS;
 
+// Nova categoria e cargos do sorteio
+const CATEGORIA_SORTEIO = "1417251148544348411";
+const CARGOS_SORTEIO = [
+  "1417191757384519690",
+  "1417191596528504883"
+];
+
 function dataHoraBrasil() {
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: "America/Sao_Paulo",
@@ -30,10 +38,69 @@ function dataHoraBrasil() {
   }).format(new Date());
 }
 
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`Bot online como ${client.user.tag}`);
+
+  await client.application.commands.create(
+    new SlashCommandBuilder()
+      .setName("sortear")
+      .setDescription("Sorteia um Corregedor responsável pelo processo.")
+  );
+
+  console.log("Comando /sortear registrado com sucesso.");
 });
 
+// COMANDO /SORTEAR
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "sortear") return;
+
+  const channel = interaction.channel;
+
+  if (!interaction.guild) {
+    return interaction.reply({
+      content: "Este comando só pode ser usado dentro do servidor.",
+      ephemeral: true
+    });
+  }
+
+  if (!channel || channel.parentId !== CATEGORIA_SORTEIO) {
+    return interaction.reply({
+      content: "Este comando só pode ser usado nos canais da categoria autorizada.",
+      ephemeral: true
+    });
+  }
+
+  await interaction.deferReply();
+
+  const membros = await interaction.guild.members.fetch();
+
+  const elegiveis = membros.filter(member => {
+    if (member.user.bot) return false;
+
+    return CARGOS_SORTEIO.some(cargoId =>
+      member.roles.cache.has(cargoId)
+    );
+  });
+
+  if (!elegiveis.size) {
+    return interaction.editReply("Nenhum membro elegível foi encontrado para o sorteio.");
+  }
+
+  const lista = Array.from(elegiveis.values());
+  const sorteado = lista[Math.floor(Math.random() * lista.length)];
+
+  await interaction.editReply(
+`━━━━━━━━━━━━━━━━◇◆◇━━━━━━━━━━━━━━━━
+PODER JUDICIÁRIO 
+━━━━━━━━━━━━━━━━◇◆◇━━━━━━━━━━━━━━━━
+O Corregedor responsável por este processo com base no sorteio é: ${sorteado}
+
+Todas as delegações deste fica por sua responsabilidade.`
+  );
+});
+
+// NOTIFICAÇÃO DE MOVIMENTAÇÃO
 client.on("messageCreate", async (message) => {
   try {
     if (message.author.bot) return;
@@ -41,7 +108,6 @@ client.on("messageCreate", async (message) => {
 
     const channel = message.channel;
 
-    // Só canais dentro da categoria
     if (channel.parentId !== CATEGORIA_PROCESSOS) return;
     if (channel.type !== ChannelType.GuildText) return;
 
@@ -59,7 +125,6 @@ client.on("messageCreate", async (message) => {
     const receberam = [];
     const falhas = [];
 
-    // 🔔 ENVIO DE DM
     for (const [, member] of membrosComAcesso) {
       try {
         await member.send(
@@ -81,7 +146,6 @@ Poder Judiciário
       }
     }
 
-    // 📄 LOG
     if (logChannel) {
       const listaReceberam = receberam.length
         ? receberam.map(m => `${m}`).join(", ")
