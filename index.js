@@ -20,8 +20,10 @@ const client = new Client({
 const CATEGORIA_PROCESSOS = process.env.CATEGORIA_PROCESSOS;
 const CANAL_LOGS = process.env.CANAL_LOGS;
 
-// Nova categoria e cargos do sorteio
+// Categoria autorizada para o comando /sortear
 const CATEGORIA_SORTEIO = "1417251148544348411";
+
+// Cargos permitidos no sorteio
 const CARGOS_SORTEIO = [
   "1417191757384519690",
   "1417191596528504883"
@@ -41,66 +43,84 @@ function dataHoraBrasil() {
 client.once("ready", async () => {
   console.log(`Bot online como ${client.user.tag}`);
 
-  await client.application.commands.create(
-    new SlashCommandBuilder()
-      .setName("sortear")
-      .setDescription("Sorteia um Corregedor responsável pelo processo.")
-  );
+  try {
+    await client.application.commands.create(
+      new SlashCommandBuilder()
+        .setName("sortear")
+        .setDescription("Sorteia um Corregedor responsável pelo processo.")
+    );
 
-  console.log("Comando /sortear registrado com sucesso.");
+    console.log("Comando /sortear registrado com sucesso.");
+  } catch (err) {
+    console.error("Erro ao registrar comando:", err);
+  }
 });
 
 // COMANDO /SORTEAR
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  if (interaction.commandName !== "sortear") return;
+  try {
+    if (!interaction.isChatInputCommand()) return;
 
-  const channel = interaction.channel;
+    if (interaction.commandName !== "sortear") return;
 
-  if (!interaction.guild) {
-    return interaction.reply({
-      content: "Este comando só pode ser usado dentro do servidor.",
-      ephemeral: true
+    const channel = interaction.channel;
+
+    if (!interaction.guild) {
+      return interaction.reply({
+        content: "Este comando só pode ser usado dentro do servidor.",
+        ephemeral: true
+      });
+    }
+
+    // Verifica categoria
+    if (!channel || channel.parentId !== CATEGORIA_SORTEIO) {
+      return interaction.reply({
+        content: "Este comando só pode ser usado em canais autorizados.",
+        ephemeral: true
+      });
+    }
+
+    await interaction.deferReply();
+
+    const membros = await interaction.guild.members.fetch();
+
+    const elegiveis = membros.filter(member => {
+      if (member.user.bot) return false;
+
+      return CARGOS_SORTEIO.some(cargoId =>
+        member.roles.cache.has(cargoId)
+      );
     });
-  }
 
-  if (!channel || channel.parentId !== CATEGORIA_SORTEIO) {
-    return interaction.reply({
-      content: "Este comando só pode ser usado nos canais da categoria autorizada.",
-      ephemeral: true
-    });
-  }
+    if (!elegiveis.size) {
+      return interaction.editReply(
+        "Nenhum membro elegível foi encontrado para o sorteio."
+      );
+    }
 
-  await interaction.deferReply();
+    const lista = Array.from(elegiveis.values());
 
-  const membros = await interaction.guild.members.fetch();
+    const sorteado =
+      lista[Math.floor(Math.random() * lista.length)];
 
-  const elegiveis = membros.filter(member => {
-    if (member.user.bot) return false;
-
-    return CARGOS_SORTEIO.some(cargoId =>
-      member.roles.cache.has(cargoId)
-    );
-  });
-
-  if (!elegiveis.size) {
-    return interaction.editReply("Nenhum membro elegível foi encontrado para o sorteio.");
-  }
-
-  const lista = Array.from(elegiveis.values());
-  const sorteado = lista[Math.floor(Math.random() * lista.length)];
-
-  await interaction.editReply(
+    await interaction.editReply(
 `━━━━━━━━━━━━━━━━◇◆◇━━━━━━━━━━━━━━━━
-PODER JUDICIÁRIO 
+PODER JUDICIÁRIO
 ━━━━━━━━━━━━━━━━◇◆◇━━━━━━━━━━━━━━━━
-O Corregedor responsável por este processo com base no sorteio é: ${sorteado}
+
+O Corregedor responsável por este processo com base no sorteio é:
+
+${sorteado}
 
 Todas as delegações deste fica por sua responsabilidade.`
-  );
+    );
+
+  } catch (error) {
+    console.error("Erro no comando /sortear:", error);
+  }
 });
 
-// NOTIFICAÇÃO DE MOVIMENTAÇÃO
+// NOTIFICAÇÕES DE MOVIMENTAÇÃO
 client.on("messageCreate", async (message) => {
   try {
     if (message.author.bot) return;
@@ -108,10 +128,14 @@ client.on("messageCreate", async (message) => {
 
     const channel = message.channel;
 
+    // Apenas canais da categoria processual
     if (channel.parentId !== CATEGORIA_PROCESSOS) return;
+
     if (channel.type !== ChannelType.GuildText) return;
 
-    const logChannel = message.guild.channels.cache.get(CANAL_LOGS);
+    const logChannel =
+      message.guild.channels.cache.get(CANAL_LOGS);
+
     const membros = await message.guild.members.fetch();
 
     const membrosComAcesso = membros.filter(member => {
@@ -125,15 +149,22 @@ client.on("messageCreate", async (message) => {
     const receberam = [];
     const falhas = [];
 
+    // ENVIO DE DMS
     for (const [, member] of membrosComAcesso) {
       try {
+
         await member.send(
 `⚖️ Notificação — Corregedoria Geral do SAMU
 Poder Judiciário
 ──────────────────────────────
+
 Houve nova movimentação no canal ${channel.name}
+
 Acompanhe o andamento do processo no canal delegado.
-Acesso direto à movimentação: ${message.url}
+
+Acesso direto à movimentação:
+${message.url}
+
 ──────────────────────────────
 Corregedoria Geral do SAMU
 Poder Judiciário
@@ -141,12 +172,15 @@ Poder Judiciário
         );
 
         receberam.push(member);
+
       } catch {
         falhas.push(member);
       }
     }
 
+    // LOGS
     if (logChannel) {
+
       const listaReceberam = receberam.length
         ? receberam.map(m => `${m}`).join(", ")
         : "Nenhum membro recebeu a notificação.";
@@ -157,19 +191,29 @@ Poder Judiciário
 
       await logChannel.send(
 `⚖️ Log de Notificação Automática
+
 Movimentação detectada em canal processual da Corregedoria.
-Canal: ${channel.name}
-Autor da movimentação
+
+Canal:
+${channel.name}
+
+Autor da movimentação:
 ${message.author}
-Mensagem
+
+Mensagem:
 ${message.url}
-Notificações enviadas
+
+Notificações enviadas:
 ✅ ${receberam.length}
-Receberam
+
+Receberam:
 ${listaReceberam}
-Falhas
+
+Falhas:
 ❌ ${falhas.length}
+
 ${listaFalhas}
+
 Corregedoria Geral do SAMU • Poder Judiciário • ${dataHoraBrasil()}`
       );
     }
