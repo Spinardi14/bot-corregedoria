@@ -20,10 +20,8 @@ const client = new Client({
 const CATEGORIA_PROCESSOS = process.env.CATEGORIA_PROCESSOS;
 const CANAL_LOGS = process.env.CANAL_LOGS;
 
-// Categoria permitida para usar /sortear
 const CATEGORIA_SORTEIO = "1417251148544348411";
 
-// Cargos elegíveis no sorteio
 const CARGOS_SORTEIO = [
   "1417191757384519690",
   "1417191596528504883"
@@ -45,33 +43,43 @@ client.once("ready", async () => {
   console.log(`Bot online como ${client.user.tag}`);
 
   try {
-
-    // REMOVE TODOS OS COMANDOS ANTIGOS
     await client.application.commands.set([]);
 
-    // REGISTRA SOMENTE O /sortear
-    await client.application.commands.set([
-      new SlashCommandBuilder()
-        .setName("sortear")
-        .setDescription("Sorteia um Corregedor responsável pelo processo.")
-        .toJSON()
-    ]);
+    for (const [, guild] of client.guilds.cache) {
+      await guild.commands.set([]);
 
-    console.log("Comandos antigos removidos.");
-    console.log("/sortear registrado com sucesso.");
+      await guild.commands.set([
+        new SlashCommandBuilder()
+          .setName("sortear")
+          .setDescription("Sorteia um Corregedor responsável pelo processo.")
+          .toJSON(),
+
+        new SlashCommandBuilder()
+          .setName("intimar")
+          .setDescription("Envia uma intimação para um usuário pelo ID.")
+          .addStringOption(option =>
+            option
+              .setName("id")
+              .setDescription("ID do usuário que será intimado.")
+              .setRequired(true)
+          )
+          .toJSON()
+      ]);
+
+      console.log(`Comandos registrados em: ${guild.name}`);
+    }
+
+    console.log("Comandos antigos removidos. Apenas /sortear e /intimar ativos.");
 
   } catch (err) {
     console.error("Erro ao registrar comandos:", err);
   }
 });
 
-// COMANDO /SORTEAR
+// COMANDOS
 client.on("interactionCreate", async (interaction) => {
   try {
-
     if (!interaction.isChatInputCommand()) return;
-
-    if (interaction.commandName !== "sortear") return;
 
     const channel = interaction.channel;
 
@@ -82,7 +90,6 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // Verifica categoria autorizada
     if (!channel || channel.parentId !== CATEGORIA_SORTEIO) {
       return interaction.reply({
         content: "Este comando só pode ser usado em canais autorizados.",
@@ -90,30 +97,30 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    await interaction.deferReply();
+    // /SORTEAR
+    if (interaction.commandName === "sortear") {
+      await interaction.deferReply();
 
-    const membros = await interaction.guild.members.fetch();
+      const membros = await interaction.guild.members.fetch();
 
-    const elegiveis = membros.filter(member => {
-      if (member.user.bot) return false;
+      const elegiveis = membros.filter(member => {
+        if (member.user.bot) return false;
 
-      return CARGOS_SORTEIO.some(cargoId =>
-        member.roles.cache.has(cargoId)
-      );
-    });
+        return CARGOS_SORTEIO.some(cargoId =>
+          member.roles.cache.has(cargoId)
+        );
+      });
 
-    if (!elegiveis.size) {
+      if (!elegiveis.size) {
+        return interaction.editReply(
+          "Nenhum membro elegível foi encontrado para o sorteio."
+        );
+      }
+
+      const lista = Array.from(elegiveis.values());
+      const sorteado = lista[Math.floor(Math.random() * lista.length)];
+
       return interaction.editReply(
-        "Nenhum membro elegível foi encontrado para o sorteio."
-      );
-    }
-
-    const lista = Array.from(elegiveis.values());
-
-    const sorteado =
-      lista[Math.floor(Math.random() * lista.length)];
-
-    await interaction.editReply(
 `━━━━━━━━━━━━━━━━◇◆◇━━━━━━━━━━━━━━━━
 PODER JUDICIÁRIO
 ━━━━━━━━━━━━━━━━◇◆◇━━━━━━━━━━━━━━━━
@@ -123,51 +130,75 @@ O Corregedor responsável por este processo com base no sorteio é:
 ${sorteado}
 
 Todas as delegações deste fica por sua responsabilidade.`
-    );
+      );
+    }
+
+    // /INTIMAR
+    if (interaction.commandName === "intimar") {
+      const userId = interaction.options.getString("id");
+
+      try {
+        const usuario = await client.users.fetch(userId);
+
+        await usuario.send(
+`⚖️ INTIMAÇÃO — CORREGEDORIA GERAL DO SAMU
+
+Você foi intimado a comparecer perante a Corregedoria no processo: ${channel.name}.
+
+Solicite acesso a este processo através do ticket da Corregedoria no Discord do SAMU:
+https://discordapp.com/channels/1095129204900773978/1207362259756646410
+
+Falar com:
+${interaction.user}`
+        );
+
+        return interaction.reply({
+          content: `✅ Intimação enviada com sucesso para ${usuario.tag}.`,
+          ephemeral: true
+        });
+
+      } catch (err) {
+        console.error("Erro ao enviar intimação:", err);
+
+        return interaction.reply({
+          content: "❌ Não foi possível enviar a intimação. Verifique se o ID está correto ou se o usuário permite receber DM.",
+          ephemeral: true
+        });
+      }
+    }
 
   } catch (error) {
-    console.error("Erro no comando /sortear:", error);
+    console.error("Erro no comando:", error);
   }
 });
 
 // NOTIFICAÇÕES DE MOVIMENTAÇÃO
 client.on("messageCreate", async (message) => {
   try {
-
     if (message.author.bot) return;
-
     if (!message.guild) return;
 
     const channel = message.channel;
 
-    // Apenas canais da categoria processual
     if (channel.parentId !== CATEGORIA_PROCESSOS) return;
-
     if (channel.type !== ChannelType.GuildText) return;
 
-    const logChannel =
-      message.guild.channels.cache.get(CANAL_LOGS);
-
+    const logChannel = message.guild.channels.cache.get(CANAL_LOGS);
     const membros = await message.guild.members.fetch();
 
     const membrosComAcesso = membros.filter(member => {
-
       if (member.user.bot) return false;
 
       return channel
         .permissionsFor(member)
         ?.has(PermissionsBitField.Flags.ViewChannel);
-
     });
 
     const receberam = [];
     const falhas = [];
 
-    // ENVIO DAS DMS
     for (const [, member] of membrosComAcesso) {
-
       try {
-
         await member.send(
 `⚖️ Notificação — Corregedoria Geral do SAMU
 Poder Judiciário
@@ -189,15 +220,11 @@ Poder Judiciário
         receberam.push(member);
 
       } catch {
-
         falhas.push(member);
-
       }
     }
 
-    // LOGS
     if (logChannel) {
-
       const listaReceberam = receberam.length
         ? receberam.map(m => `${m}`).join(", ")
         : "Nenhum membro recebeu a notificação.";
@@ -236,9 +263,7 @@ Corregedoria Geral do SAMU • Poder Judiciário • ${dataHoraBrasil()}`
     }
 
   } catch (error) {
-
     console.error("Erro no bot:", error);
-
   }
 });
 
