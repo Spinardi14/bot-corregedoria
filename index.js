@@ -20,10 +20,10 @@ const client = new Client({
 const CATEGORIA_PROCESSOS = process.env.CATEGORIA_PROCESSOS;
 const CANAL_LOGS = process.env.CANAL_LOGS;
 
-// Categoria autorizada para o comando /sortear
+// Categoria permitida para usar /sortear
 const CATEGORIA_SORTEIO = "1417251148544348411";
 
-// Cargos permitidos no sorteio
+// Cargos elegíveis no sorteio
 const CARGOS_SORTEIO = [
   "1417191757384519690",
   "1417191596528504883"
@@ -40,25 +40,35 @@ function dataHoraBrasil() {
   }).format(new Date());
 }
 
+// BOT ONLINE
 client.once("ready", async () => {
   console.log(`Bot online como ${client.user.tag}`);
 
   try {
-    await client.application.commands.create(
+
+    // REMOVE TODOS OS COMANDOS ANTIGOS
+    await client.application.commands.set([]);
+
+    // REGISTRA SOMENTE O /sortear
+    await client.application.commands.set([
       new SlashCommandBuilder()
         .setName("sortear")
         .setDescription("Sorteia um Corregedor responsável pelo processo.")
-    );
+        .toJSON()
+    ]);
 
-    console.log("Comando /sortear registrado com sucesso.");
+    console.log("Comandos antigos removidos.");
+    console.log("/sortear registrado com sucesso.");
+
   } catch (err) {
-    console.error("Erro ao registrar comando:", err);
+    console.error("Erro ao registrar comandos:", err);
   }
 });
 
 // COMANDO /SORTEAR
 client.on("interactionCreate", async (interaction) => {
   try {
+
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName !== "sortear") return;
@@ -72,7 +82,7 @@ client.on("interactionCreate", async (interaction) => {
       });
     }
 
-    // Verifica categoria
+    // Verifica categoria autorizada
     if (!channel || channel.parentId !== CATEGORIA_SORTEIO) {
       return interaction.reply({
         content: "Este comando só pode ser usado em canais autorizados.",
@@ -123,7 +133,9 @@ Todas as delegações deste fica por sua responsabilidade.`
 // NOTIFICAÇÕES DE MOVIMENTAÇÃO
 client.on("messageCreate", async (message) => {
   try {
+
     if (message.author.bot) return;
+
     if (!message.guild) return;
 
     const channel = message.channel;
@@ -139,18 +151,21 @@ client.on("messageCreate", async (message) => {
     const membros = await message.guild.members.fetch();
 
     const membrosComAcesso = membros.filter(member => {
+
       if (member.user.bot) return false;
 
       return channel
         .permissionsFor(member)
         ?.has(PermissionsBitField.Flags.ViewChannel);
+
     });
 
     const receberam = [];
     const falhas = [];
 
-    // ENVIO DE DMS
+    // ENVIO DAS DMS
     for (const [, member] of membrosComAcesso) {
+
       try {
 
         await member.send(
@@ -174,7 +189,9 @@ Poder Judiciário
         receberam.push(member);
 
       } catch {
+
         falhas.push(member);
+
       }
     }
 
@@ -219,7 +236,9 @@ Corregedoria Geral do SAMU • Poder Judiciário • ${dataHoraBrasil()}`
     }
 
   } catch (error) {
+
     console.error("Erro no bot:", error);
+
   }
 });
 
